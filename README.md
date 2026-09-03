@@ -1,5 +1,5 @@
-# Weighted-Laplacian-Flow
-This repository contains the Python implementation of weighted Laplacian flow. It provides a grid-based method for two-dimensional experiments and a mesh-free neural-network method for ten-dimensional experiments.
+# Weighted Laplacian Flow
+This repository contains the Python implementation of [**Weighted Laplacian Flow: A Deterministic Particle Flow with Provable Convergence**](https://arxiv.org/abs/2608.21831). It provides a grid-based method for two-dimensional experiments and a mesh-free neural-network method for ten-dimensional experiments.
 
 ## Dependencies
 NumPy, SciPy, Matplotlib, and PyTorch (only for mesh-free method). The code is tested on the following versions:
