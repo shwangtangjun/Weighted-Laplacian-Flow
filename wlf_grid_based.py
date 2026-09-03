@@ -29,8 +29,18 @@ from utils import (
 DIMENSION = 2
 N_PARTICLES = 16000
 N_GRID = 128
-T_FINAL = 10.0
-DT = 0.01
+T_FINAL = {
+    ("unimodal", "bimodal"): 1.0,
+    ("uniform", "bimodal"): 10.0,
+    ("uniform", "cauchy"): 10.0,
+    ("corner", "cauchy"): 10.0,
+}
+DT = {
+    ("unimodal", "bimodal"): 0.001,
+    ("uniform", "bimodal"): 0.01,
+    ("uniform", "cauchy"): 0.01,
+    ("corner", "cauchy"): 0.01,
+}
 ALPHA = {
     ("unimodal", "bimodal"): 1.0,
     ("uniform", "bimodal"): 0.0,
@@ -143,7 +153,9 @@ def main() -> None:
         )
     tag = f"{DIMENSION}d_{args.initial}2{args.target}"
     alpha = ALPHA[experiment_key]
-    n_steps = int(round(T_FINAL / DT))
+    t_final = T_FINAL[experiment_key]
+    dt = DT[experiment_key]
+    n_steps = int(round(t_final / dt))
     grid = GridOperators(args.target, N_GRID, INTERPOLATION_ORDER[args.target])
     rng = np.random.default_rng(SEED)
     RESULTS_DIR.mkdir(parents=True, exist_ok=True)
@@ -180,13 +192,13 @@ def main() -> None:
     flow_times = [0.0]
     langevin_times = [0.0]
 
-    snapshot_steps = sorted(set(int(round(time / DT)) for time in np.linspace(0.0, T_FINAL, SNAPSHOT_COUNT)))
+    snapshot_steps = sorted(set(int(round(time / dt)) for time in np.linspace(0.0, t_final, SNAPSHOT_COUNT)))
     snapshots = {0: initial_particles.copy()}
     langevin_snapshots = {0: initial_particles.copy()}
     target_particles = sample_target_projection(rng, N_PARTICLES, args.target)
     target_kde_kl = kl(density(target_particles))
 
-    print(f"experiment = {tag}, steps = {n_steps}, dt = {DT:g}, particles = {N_PARTICLES}")
+    print(f"experiment = {tag}, steps = {n_steps}, dt = {dt:g}, particles = {N_PARTICLES}")
     print(f"Target KDE = {target_kde_kl:.4e}")
 
     for step in range(1, n_steps + 1):
@@ -208,11 +220,11 @@ def main() -> None:
         # 3. Transport step
         # ------------------------------------------------------------------
         previous_omega_grid = omega_grid
-        back_points = (grid.coords - DT * velocity_grid).reshape(-1, 2)
+        back_points = (grid.coords - dt * velocity_grid).reshape(-1, 2)
         apply_boundary(back_points, args.target)
         omega_back = grid.interpolate(previous_omega_grid, back_points).reshape(grid.shape)
         source_back = grid.interpolate(source_grid, back_points).reshape(grid.shape)
-        omega_grid = omega_back + DT * source_back
+        omega_grid = omega_back + dt * source_back
 
         # ------------------------------------------------------------------
         # 4. Update step
@@ -221,7 +233,7 @@ def main() -> None:
         drift_grid = grad_log_rho_grid - grid.gradient(previous_omega_grid)
         drift_particles = grid.interpolate(drift_grid, flow_particles)
         noise = rng.standard_normal(size=flow_particles.shape)
-        flow_particles += DT * velocity_particles + alpha * DT * drift_particles + np.sqrt(2.0 * alpha * DT) * noise
+        flow_particles += dt * velocity_particles + alpha * dt * drift_particles + np.sqrt(2.0 * alpha * dt) * noise
         apply_boundary(flow_particles, args.target)
 
         # ------------------------------------------------------------------
@@ -229,7 +241,7 @@ def main() -> None:
         # ------------------------------------------------------------------
         noise = rng.standard_normal(size=langevin_particles.shape)
         langevin_drift = grid.interpolate(grad_log_rho_grid, langevin_particles)
-        langevin_particles += DT * langevin_drift + np.sqrt(2.0 * DT) * noise
+        langevin_particles += dt * langevin_drift + np.sqrt(2.0 * dt) * noise
         apply_boundary(langevin_particles, args.target)
 
         # ------------------------------------------------------------------
@@ -237,21 +249,21 @@ def main() -> None:
         # ------------------------------------------------------------------
         flow_kl.append(kl(density(flow_particles)))
         langevin_kl.append(kl(density(langevin_particles)))
-        flow_times.append(step * DT)
-        langevin_times.append(step * DT)
+        flow_times.append(step * dt)
+        langevin_times.append(step * dt)
 
         if step in snapshot_steps:
             snapshots[step] = flow_particles.copy()
             langevin_snapshots[step] = langevin_particles.copy()
             print(
-                f"Step {step:4d}  flow_t={step * DT:5.2f}  langevin_t={step * DT:5.2f}  "
+                f"Step {step:4d}  flow_t={step * dt:5.2f}  langevin_t={step * dt:5.2f}  "
                 f"KL(p||q_wlf)={flow_kl[-1]:.4f}  KL(p||q_langevin)={langevin_kl[-1]:.4f}"
             )
 
     kl_path = RESULTS_DIR / f"kl_{tag}.png"
     snapshots_path = RESULTS_DIR / f"snapshots_{tag}.png"
     save_kl_plot(kl_path, flow_times, flow_kl, langevin_times, langevin_kl, target_kde_kl)
-    save_snapshot_plot(snapshots_path, snapshots, DT, grid.mesh, target_grid, args.target, comparison_snapshots=langevin_snapshots)
+    save_snapshot_plot(snapshots_path, snapshots, dt, grid.mesh, target_grid, args.target, comparison_snapshots=langevin_snapshots)
 
     print(f"Final KL(p||q_wlf) = {flow_kl[-1]}")
     print(f"Final KL(p||q_langevin) = {langevin_kl[-1]}")
